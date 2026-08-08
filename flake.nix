@@ -1,10 +1,17 @@
 {
-  description = "vulkan engine dev shell";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  outputs = { self, nixpkgs }:
+  description = "zig vulkan engine dev shell";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    zig-overlay.url = "github:mitchellh/zig-overlay";
+    zls.url = "github:zigtools/zls/0.16.0";
+    zls.inputs.nixpkgs.follows = "nixpkgs";
+    zls.inputs.zig-overlay.follows = "zig-overlay";
+  };
+  outputs = { self, nixpkgs, zig-overlay, zls }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
+      zig = zig-overlay.packages.${system}."0.16.0";
     in {
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [
@@ -16,13 +23,14 @@
           shaderc
           shader-slang
           sdl3
-          llvm
-          llvmPackages.compiler-rt
-          glm
           gdb
           renderdoc
         ];
-        nativeBuildInputs = with pkgs; [ cmake ninja pkg-config gcc ];
+        nativeBuildInputs = [
+            zig
+            zls.packages.${system}.zls
+            pkgs.pkg-config
+        ];
 
         shellHook = ''
           export VK_LAYER_PATH=${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d
