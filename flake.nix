@@ -7,12 +7,19 @@
     zls.inputs.nixpkgs.follows = "nixpkgs";
     zls.inputs.zig-overlay.follows = "zig-overlay";
   };
-  outputs = { self, nixpkgs, zig-overlay, zls }:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      zig-overlay,
+      zls,
+    }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       zig = zig-overlay.packages.${system}."0.16.0";
-    in {
+    in
+    {
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           vulkan-headers
@@ -27,9 +34,9 @@
           renderdoc
         ];
         nativeBuildInputs = [
-            zig
-            zls.packages.${system}.zls
-            pkgs.pkg-config
+          zig
+          zls.packages.${system}.zls
+          pkgs.pkg-config
         ];
 
         shellHook = ''

@@ -4,6 +4,13 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const window_module = b.addModule("Window", .{
+        .root_source_file = b.path("Window/window.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
     const renderer_module = b.addModule("Renderer", .{
         .root_source_file = b.path("Renderer/renderer.zig"),
         .target = target,
@@ -28,7 +35,10 @@ pub fn build(b: *std.Build) void {
     });
 
     // tests.root_module.addImport("Compt", compt_module);
+    exe.root_module.addImport("Window", window_module);
     exe.root_module.addImport("Renderer", renderer_module);
+
+    exe.root_module.linkSystemLibrary("SDL3", .{});
 
     b.installArtifact(exe);
 
