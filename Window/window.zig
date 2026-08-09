@@ -16,13 +16,13 @@ pub const WindowError = error{
 };
 
 pub const Window = struct {
-    width: u32,
-    height: u32,
+    _width: u32,
+    _height: u32,
 
     _sdl_window: *c.SDL_Window,
     _renderer: *c.SDL_Renderer,
 
-    pub fn init(width: u32, height: u32, name: [:0]const u8) WindowError!@This() {
+    pub fn init(width: u32, height: u32, comptime name: [:0]const u8) WindowError!@This() {
         if (!c.SDL_Init(c.SDL_INIT_VIDEO)) {
             std.debug.print("{s}\n", .{c.SDL_GetError()});
             return WindowError.SdlInitFailed;
@@ -44,8 +44,8 @@ pub const Window = struct {
         };
 
         return Window{
-            .width = width,
-            .height = height,
+            ._width = width,
+            ._height = height,
             ._sdl_window = sdl_window,
             ._renderer = renderer,
         };

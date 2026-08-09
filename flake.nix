@@ -43,6 +43,7 @@
           export VK_LAYER_PATH=${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d
           export VK_ADD_LAYER_PATH=$VK_LAYER_PATH
           export LD_LIBRARY_PATH=${pkgs.vulkan-loader}/lib:${pkgs.renderdoc}/lib:$LD_LIBRARY_PATH
+          export VULKAN_REGISTRY_XML=${pkgs.vulkan-headers}/share/vulkan/registry/vk.xml
         '';
       };
     };
