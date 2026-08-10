@@ -23,7 +23,7 @@ pub fn main() !void {
     var window = try win.Window.init(800, 800, app_name);
     defer window.deinit();
 
-    var renderer = try rndr.Renderer.init(&window, app_name);
+    var renderer = try rndr.Renderer.init(gpa, &window, app_name);
     defer renderer.deinit();
 
     var running = true;
