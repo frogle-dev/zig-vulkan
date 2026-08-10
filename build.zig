@@ -12,6 +12,12 @@ pub fn build(b: *std.Build) void {
         },
     }).module("vulkan-zig");
 
+    const logging_module = b.addModule("Logging", .{
+        .root_source_file = b.path("Logging/logging.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const deletion_queue_module = b.addModule("DeletionQueue", .{
         .root_source_file = b.path("DeletionQueue/deletion_queue.zig"),
         .target = target,
@@ -50,6 +56,10 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("DeletionQueue", deletion_queue_module);
     exe.root_module.addImport("Window", window_module);
     exe.root_module.addImport("Renderer", renderer_module);
+
+    for ([_]*std.Build.Module{ window_module, renderer_module, exe.root_module, deletion_queue_module }) |m| {
+        m.addImport("Logging", logging_module);
+    }
 
     exe.root_module.linkSystemLibrary("SDL3", .{});
 

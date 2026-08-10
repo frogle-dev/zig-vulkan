@@ -7,6 +7,7 @@ const c = @cImport({
 const vk = @import("Vulkan");
 const delque = @import("DeletionQueue");
 const win = @import("Window");
+const log = @import("Logging");
 
 pub const RendererError = error{
     SdlLoadVulkanLibraryFailed,
@@ -52,12 +53,12 @@ pub const Renderer = struct {
 
     pub fn init(gpa: std.mem.Allocator, window: *win.Window, comptime app_name: [:0]const u8) !@This() {
         if (!c.SDL_Vulkan_LoadLibrary(null)) { // sdl will find vulkan library, if not sdl get vk instance proc addr wil fail
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return RendererError.SdlLoadVulkanLibraryFailed;
         }
 
         const get_instance_proc_addr = c.SDL_Vulkan_GetVkGetInstanceProcAddr() orelse {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return RendererError.SdlGetInstanceProcAddrFailed;
         };
 
@@ -101,16 +102,16 @@ pub const Renderer = struct {
             }
 
             if (!found) {
-                std.log.err("Missing layer: {s}", .{required_layer});
+                log.err(@src(), "Missing layer: {s}", .{required_layer});
                 return RendererError.LayerNotSupported;
             }
         }
 
-        std.log.debug("Found all required layers", .{});
+        log.debug(@src(), "Found all required layers", .{});
 
         var sdl_ext_count: u32 = 0;
         const sdl_extensions = c.SDL_Vulkan_GetInstanceExtensions(&sdl_ext_count) orelse {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return RendererError.SdlGetInstanceExtensionsFailed;
         };
 
@@ -138,12 +139,12 @@ pub const Renderer = struct {
             }
 
             if (!found) {
-                std.log.err("Missing extension: {s}", .{required_extension});
+                log.err(@src(), "Missing extension: {s}", .{required_extension});
                 return RendererError.ExtensionNotSupported;
             }
         }
 
-        std.log.debug("Found all required extensions", .{});
+        log.debug(@src(), "Found all required extensions", .{});
 
         const instance_info = vk.InstanceCreateInfo{
             .p_application_info = &app_info,

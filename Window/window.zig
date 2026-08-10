@@ -4,6 +4,8 @@ const c = @cImport({
     @cInclude("SDL3/SDL.h");
 });
 
+const log = @import("Logging");
+
 pub const WindowError = error{
     SdlInitFailed,
     SdlWindowCreationFailed,
@@ -24,22 +26,22 @@ pub const Window = struct {
 
     pub fn init(width: u32, height: u32, comptime name: [:0]const u8) WindowError!@This() {
         if (!c.SDL_Init(c.SDL_INIT_VIDEO)) {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return WindowError.SdlInitFailed;
         }
 
         if (!c.SDL_SetHint(c.SDL_HINT_APP_ID, name)) {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return WindowError.SdlSetHintFailed;
         }
 
         const sdl_window = c.SDL_CreateWindow(name, @intCast(width), @intCast(height), c.SDL_WINDOW_VULKAN | c.SDL_WINDOW_RESIZABLE) orelse {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return WindowError.SdlWindowCreationFailed;
         };
 
         const renderer = c.SDL_CreateRenderer(sdl_window, null) orelse {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return WindowError.SdlCreateRendererFailed;
         };
 
@@ -70,17 +72,17 @@ pub const Window = struct {
 
     pub fn clear(self: *@This()) WindowError!void {
         if (!c.SDL_SetRenderDrawColor(self._renderer, 100, 10, 50, 255)) {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return WindowError.SdlRendererSetDrawColor;
         }
 
         if (!c.SDL_RenderClear(self._renderer)) {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return WindowError.SdlRendererSetDrawColor;
         }
 
         if (!c.SDL_RenderPresent(self._renderer)) {
-            std.log.err("{s}", .{c.SDL_GetError()});
+            log.err(@src(), "{s}", .{c.SDL_GetError()});
             return WindowError.SdlRendererSetDrawColor;
         }
     }
