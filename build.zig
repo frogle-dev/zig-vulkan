@@ -12,6 +12,12 @@ pub fn build(b: *std.Build) void {
         },
     }).module("vulkan-zig");
 
+    const deletion_queue_module = b.addModule("DeletionQueue", .{
+        .root_source_file = b.path("DeletionQueue/deletion_queue.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const window_module = b.addModule("Window", .{
         .root_source_file = b.path("Window/window.zig"),
         .target = target,
@@ -23,15 +29,13 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("Renderer/renderer.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
 
-    // const tests = b.addTest(.{ .name = "tests", .root_module = b.createModule(.{
-    //     .root_source_file = b.path("src/tests.zig"),
-    //     .target = target,
-    //     .optimize = optimize,
-    // }) });
+    renderer_module.addImport("Vulkan", vulkan_module);
+    renderer_module.addImport("DeletionQueue", deletion_queue_module);
+    renderer_module.addImport("Window", window_module);
 
-    // Test executable
     const exe = b.addExecutable(.{
         .name = "main",
         .root_module = b.createModule(.{
@@ -42,18 +46,14 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // tests.root_module.addImport("Compt", compt_module);
     exe.root_module.addImport("Vulkan", vulkan_module);
+    exe.root_module.addImport("DeletionQueue", deletion_queue_module);
     exe.root_module.addImport("Window", window_module);
     exe.root_module.addImport("Renderer", renderer_module);
 
     exe.root_module.linkSystemLibrary("SDL3", .{});
 
     b.installArtifact(exe);
-
-    // const run_test = b.addRunArtifact(tests);
-    // const test_step = b.step("test", "Run tests");
-    // test_step.dependOn(&run_test.step);
 
     const run = b.addRunArtifact(exe);
     const run_step = b.step("run", "Run executable");

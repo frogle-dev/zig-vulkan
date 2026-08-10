@@ -1,7 +1,9 @@
 const std = @import("std");
 
-const renderer = @import("Renderer");
-const window = @import("Window");
+const rndr = @import("Renderer");
+const win = @import("Window");
+
+const app_name = "ZigVulkan";
 
 pub fn main() !void {
     var debug_allocator = std.heap.DebugAllocator(.{}){};
@@ -18,13 +20,16 @@ pub fn main() !void {
     try array_list.append(gpa, 5);
     try array_list.append(gpa, 1);
 
-    var win = try window.Window.init(800, 800, "ZigVulkan");
-    defer win.deinit();
+    var window = try win.Window.init(800, 800, app_name);
+    defer window.deinit();
+
+    var renderer = try rndr.Renderer.init(&window, app_name);
+    defer renderer.deinit();
 
     var running = true;
     while (running) {
-        running = win.pollEvents();
+        running = window.pollEvents();
 
-        try win.clear();
+        try window.clear();
     }
 }
