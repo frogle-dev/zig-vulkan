@@ -13,6 +13,7 @@ pub const RendererError = error{
     SdlLoadVulkanLibraryFailed,
     SdlGetInstanceProcAddrFailed,
     SdlGetInstanceExtensionsFailed,
+    InvalidPropertyType,
     LayerNotSupported,
     ExtensionNotSupported,
     FailedToGetInstanceProcAddr,
@@ -41,6 +42,28 @@ fn cArrayToArrayList(gpa: std.mem.Allocator, comptime CType: type, comptime ZTyp
     return array_list;
 }
 
+/// PropertyType must be vk.LayerProperties or vk.ExtensionProperties
+fn allSupported(required: []const [*:0]const u8, comptime PropertyType: type, properties: []const PropertyType) !bool {
+    for (required) |req| {
+        var found = false;
+        for (properties) |prop| {
+            const available =
+                if (PropertyType == vk.LayerProperties) prop.layer_name else if (PropertyType == vk.ExtensionProperties) prop.extension_name else return RendererError.InvalidPropertyType;
+
+            if (std.mem.eql(u8, std.mem.span(req), std.mem.sliceTo(&available, 0))) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 const Instance = struct {
     instance: vk.Instance,
     fns: vk.InstanceWrapper,
@@ -50,6 +73,7 @@ pub const Renderer = struct {
     _window: *win.Window,
 
     _instance: Instance,
+    _debug_messenger: vk.DebugUtilsMessengerEXT,
 
     pub fn init(gpa: std.mem.Allocator, window: *win.Window, comptime app_name: [:0]const u8) !@This() {
         if (!c.SDL_Vulkan_LoadLibrary(null)) { // sdl will find vulkan library, if not sdl get vk instance proc addr wil fail
@@ -66,15 +90,18 @@ pub const Renderer = struct {
         const base_fns = vk.BaseWrapper.load(pfn);
 
         const instance = try createInstance(gpa, base_fns, app_name);
-        // createDebugMessenger(instance);
+        const debug_messenger = try createDebugMessenger(&instance);
 
         return .{
             ._window = window,
             ._instance = instance,
+            ._debug_messenger = debug_messenger,
         };
     }
 
-    pub fn deinit(_: *@This()) void {}
+    pub fn deinit(self: *@This()) void {
+        self._instance.fns.destroyInstance(self._instance.instance, null);
+    }
 
     fn createInstance(gpa: std.mem.Allocator, base_fns: vk.BaseWrapper, comptime app_name: [:0]const u8) !Instance {
         const app_info = vk.ApplicationInfo{
@@ -92,19 +119,8 @@ pub const Renderer = struct {
         layer_props.items.len = layer_count;
         _ = try base_fns.enumerateInstanceLayerProperties(&layer_count, layer_props.items.ptr);
 
-        for (required_layers) |required_layer| {
-            var found = false;
-            for (layer_props.items) |layer_prop| {
-                if (std.mem.eql(u8, std.mem.sliceTo(&layer_prop.layer_name, 0), std.mem.span(required_layer))) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) {
-                log.err(@src(), "Missing layer: {s}", .{required_layer});
-                return RendererError.LayerNotSupported;
-            }
+        if (!try allSupported(&required_layers, vk.LayerProperties, layer_props.items)) {
+            return RendererError.LayerNotSupported;
         }
 
         log.debug(@src(), "Found all required layers", .{});
@@ -129,19 +145,8 @@ pub const Renderer = struct {
         ext_props.items.len = ext_count;
         _ = try base_fns.enumerateInstanceExtensionProperties(null, &ext_count, ext_props.items.ptr);
 
-        for (required_extensions.items) |required_extension| {
-            var found = false;
-            for (ext_props.items) |ext_prop| {
-                if (std.mem.eql(u8, std.mem.sliceTo(&ext_prop.extension_name, 0), std.mem.span(required_extension))) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found) {
-                log.err(@src(), "Missing extension: {s}", .{required_extension});
-                return RendererError.ExtensionNotSupported;
-            }
+        if (!try allSupported(required_extensions.items, vk.ExtensionProperties, ext_props.items)) {
+            return RendererError.ExtensionNotSupported;
         }
 
         log.debug(@src(), "Found all required extensions", .{});
@@ -163,19 +168,41 @@ pub const Renderer = struct {
             }),
         };
     }
-    //
-    //     fn debugCallback() void {
-    //
-    // }
-    //
-    //     fn createDebugMessenger(instance: *Instance) !vk.DebugUtilsMessengerEXT {
-    //         if (!enable_validation_layers)
-    //             return;
-    //
-    //         const debug_messenger_info = vk.DebugUtilsMessengerCreateInfoEXT{
-    //             // .pfn_user_callback =
-    //         }
-    //
-    //         return
-    //     }
+
+    /// used for finding bits that are true within packed structs
+    /// ex: vk.DebugUtilsMessageTypeFlagsEXT has many bools, so this function is for finding the one that is true
+    fn findStructFieldTrue(comptime StructType: type, packed_struct: StructType) ?[:0]const u8 {
+        inline for (@typeInfo(StructType).@"struct".fields) |field| {
+            if (field.type == bool and @field(packed_struct, field.name)) {
+                return field.name;
+            }
+        }
+
+        return null;
+    }
+
+    fn debugCallback(severity: vk.DebugUtilsMessageSeverityFlagsEXT, msg_type: vk.DebugUtilsMessageTypeFlagsEXT, callback_data: ?*const vk.DebugUtilsMessengerCallbackDataEXT, _: ?*anyopaque) callconv(vk.vulkan_call_conv) vk.Bool32 {
+        const msg_type_str = findStructFieldTrue(vk.DebugUtilsMessageTypeFlagsEXT, msg_type).?;
+
+        if (severity.error_bit_ext) {
+            log.err(@src(), "(Validation layer) type: {s}\nmsg: {s}", .{ msg_type_str, callback_data.?.p_message.? });
+        } else if (severity.warning_bit_ext) {
+            log.warn(@src(), "(Validation layer) type: {s}\nmsg: {s}", .{ msg_type_str, callback_data.?.p_message.? });
+        }
+
+        return vk.Bool32.false;
+    }
+
+    fn createDebugMessenger(instance: *const Instance) !vk.DebugUtilsMessengerEXT {
+        if (!vulkan_debug)
+            return;
+
+        const debug_messenger_info = vk.DebugUtilsMessengerCreateInfoEXT{
+            .message_severity = .{ .warning_bit_ext = true, .error_bit_ext = true },
+            .message_type = .{ .general_bit_ext = true, .performance_bit_ext = true, .validation_bit_ext = true },
+            .pfn_user_callback = &debugCallback,
+        };
+
+        return instance.fns.createDebugUtilsMessengerEXT(instance.instance, &debug_messenger_info, null);
+    }
 };
