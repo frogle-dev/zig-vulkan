@@ -78,10 +78,12 @@ fn allSupported(required: []const [*:0]const u8, comptime PropertyType: type, pr
 
 const Instance = struct {
     vk_instance: vk.Instance,
+    vk_debug_messenger: ?vk.DebugUtilsMessengerEXT,
     fns: vk.InstanceWrapper,
 
     pub fn deinit(self: *@This()) void {
-        self.fns.destroyInstance(self.vk_instance);
+        if (vulkan_debug) self.fns.destroyDebugUtilsMessengerEXT(self.vk_instance, self.vk_debug_messenger.?, null);
+        self.fns.destroyInstance(self.vk_instance, null);
     }
 };
 
@@ -93,13 +95,11 @@ pub const Renderer = struct {
     _window: *win.Window,
 
     _instance: Instance,
-    _debug_messenger: ?vk.DebugUtilsMessengerEXT,
 
-    pub fn init(gpa: std.mem.Allocator, window: *win.Window, comptime app_name: [:0]const u8) !@This() {
-        var renderer: Renderer = .{};
-        renderer._allocator = gpa;
-        renderer._window = window;
-        renderer._deletion_queue = try delque.DeletionQueue.initCapacity(renderer.allocator, 1); // capacity of 1 for the vulkan instance
+    pub fn init(self: *@This(), gpa: std.mem.Allocator, window: *win.Window, comptime app_name: [:0]const u8) !void {
+        self.allocator = gpa;
+        self._window = window;
+        self._deletion_queue = try delque.DeletionQueue.initCapacity(self.allocator, 1); // capacity of 1 for the vulkan instance
 
         if (!c.SDL_Vulkan_LoadLibrary(null)) { // sdl will find vulkan library, if not sdl get vk instance proc addr wil fail
             log.err(@src(), "{s}", .{c.SDL_GetError()});
@@ -114,19 +114,15 @@ pub const Renderer = struct {
         const pfn: vk.PfnGetInstanceProcAddr = @ptrCast(get_instance_proc_addr);
         const base_fns = vk.BaseWrapper.load(pfn);
 
-        renderer._instance = try renderer.createInstance(renderer.allocator, base_fns, app_name);
-        if (vulkan_debug) renderer._debug_messenger = try renderer.createDebugMessenger(&renderer._instance);
-
-        return renderer;
+        try self.createInstance(base_fns, app_name);
+        if (vulkan_debug) self._instance.vk_debug_messenger = try self.createDebugMessenger(&self._instance);
     }
 
     pub fn deinit(self: *@This()) void {
         self._deletion_queue.deinit(self.allocator); // deinits all the items in the queue
-
-        if (vulkan_debug) self._instance.fns.destroyDebugUtilsMessengerEXT(self._instance.instance, self._debug_messenger.?, null);
     }
 
-    fn createInstance(self: *@This(), base_fns: vk.BaseWrapper, comptime app_name: [:0]const u8) !Instance {
+    fn createInstance(self: *@This(), base_fns: vk.BaseWrapper, comptime app_name: [:0]const u8) !void {
         const app_info = vk.ApplicationInfo{
             .api_version = api_version.toU32(),
             .engine_version = 1,
@@ -184,16 +180,15 @@ pub const Renderer = struct {
 
         const vk_instance = try base_fns.createInstance(&instance_info, null);
 
-        var instance = Instance{
-            .instance = vk_instance,
-            .fns = vk.InstanceWrapper.load(instance, base_fns.dispatch.vkGetInstanceProcAddr orelse {
+        self._instance = Instance{
+            .vk_instance = vk_instance,
+            .vk_debug_messenger = null, // initialized later
+            .fns = vk.InstanceWrapper.load(vk_instance, base_fns.dispatch.vkGetInstanceProcAddr orelse {
                 return RendererError.FailedToGetInstanceProcAddr;
             }),
         };
 
-        self._deletion_queue.pushBack(self.allocator, &instance.deinit);
-
-        return instance;
+        try self._deletion_queue.push(self.allocator, Instance, &self._instance, &Instance.deinit);
     }
 
     fn debugCallback(severity: vk.DebugUtilsMessageSeverityFlagsEXT, msg_type: vk.DebugUtilsMessageTypeFlagsEXT, callback_data: ?*const vk.DebugUtilsMessengerCallbackDataEXT, _: ?*anyopaque) callconv(vk.vulkan_call_conv) vk.Bool32 {
@@ -208,7 +203,7 @@ pub const Renderer = struct {
         return vk.Bool32.false;
     }
 
-    fn createDebugMessenger(self: *@This(), instance: *const Instance) !vk.DebugUtilsMessengerEXT {
+    fn createDebugMessenger(_: *@This(), instance: *const Instance) !vk.DebugUtilsMessengerEXT {
         const debug_messenger_info = vk.DebugUtilsMessengerCreateInfoEXT{
             .message_severity = .{ .warning_bit_ext = true, .error_bit_ext = true },
             .message_type = .{ .general_bit_ext = true, .performance_bit_ext = true, .validation_bit_ext = true },
