@@ -42,6 +42,18 @@ fn cArrayToArrayList(gpa: std.mem.Allocator, comptime CType: type, comptime ZTyp
     return array_list;
 }
 
+/// used for finding bits that are true within packed structs
+/// ex: vk.DebugUtilsMessageTypeFlagsEXT has many bools, so this function is for finding the one that is true
+fn findStructFieldTrue(comptime StructType: type, packed_struct: StructType) ?[:0]const u8 {
+    inline for (@typeInfo(StructType).@"struct".fields) |field| {
+        if (field.type == bool and @field(packed_struct, field.name)) {
+            return field.name;
+        }
+    }
+
+    return null;
+}
+
 /// PropertyType must be vk.LayerProperties or vk.ExtensionProperties
 fn allSupported(required: []const [*:0]const u8, comptime PropertyType: type, properties: []const PropertyType) !bool {
     for (required) |req| {
@@ -167,18 +179,6 @@ pub const Renderer = struct {
                 return RendererError.FailedToGetInstanceProcAddr;
             }),
         };
-    }
-
-    /// used for finding bits that are true within packed structs
-    /// ex: vk.DebugUtilsMessageTypeFlagsEXT has many bools, so this function is for finding the one that is true
-    fn findStructFieldTrue(comptime StructType: type, packed_struct: StructType) ?[:0]const u8 {
-        inline for (@typeInfo(StructType).@"struct".fields) |field| {
-            if (field.type == bool and @field(packed_struct, field.name)) {
-                return field.name;
-            }
-        }
-
-        return null;
     }
 
     fn debugCallback(severity: vk.DebugUtilsMessageSeverityFlagsEXT, msg_type: vk.DebugUtilsMessageTypeFlagsEXT, callback_data: ?*const vk.DebugUtilsMessengerCallbackDataEXT, _: ?*anyopaque) callconv(vk.vulkan_call_conv) vk.Bool32 {
