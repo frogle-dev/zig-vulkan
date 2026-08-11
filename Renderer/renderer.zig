@@ -77,17 +77,30 @@ fn allSupported(required: []const [*:0]const u8, comptime PropertyType: type, pr
 }
 
 const Instance = struct {
-    instance: vk.Instance,
+    vk_instance: vk.Instance,
     fns: vk.InstanceWrapper,
+
+    pub fn deinit(self: *@This()) void {
+        self.fns.destroyInstance(self.vk_instance);
+    }
 };
 
 pub const Renderer = struct {
+    allocator: std.mem.Allocator,
+
+    _deletion_queue: delque.DeletionQueue,
+
     _window: *win.Window,
 
     _instance: Instance,
     _debug_messenger: ?vk.DebugUtilsMessengerEXT,
 
     pub fn init(gpa: std.mem.Allocator, window: *win.Window, comptime app_name: [:0]const u8) !@This() {
+        var renderer: Renderer = .{};
+        renderer._allocator = gpa;
+        renderer._window = window;
+        renderer._deletion_queue = try delque.DeletionQueue.initCapacity(renderer.allocator, 1); // capacity of 1 for the vulkan instance
+
         if (!c.SDL_Vulkan_LoadLibrary(null)) { // sdl will find vulkan library, if not sdl get vk instance proc addr wil fail
             log.err(@src(), "{s}", .{c.SDL_GetError()});
             return RendererError.SdlLoadVulkanLibraryFailed;
@@ -101,21 +114,19 @@ pub const Renderer = struct {
         const pfn: vk.PfnGetInstanceProcAddr = @ptrCast(get_instance_proc_addr);
         const base_fns = vk.BaseWrapper.load(pfn);
 
-        const instance = try createInstance(gpa, base_fns, app_name);
+        renderer._instance = try renderer.createInstance(renderer.allocator, base_fns, app_name);
+        if (vulkan_debug) renderer._debug_messenger = try renderer.createDebugMessenger(&renderer._instance);
 
-        return .{
-            ._window = window,
-            ._instance = instance,
-            ._debug_messenger = if (vulkan_debug) try createDebugMessenger(&instance),
-        };
+        return renderer;
     }
 
     pub fn deinit(self: *@This()) void {
+        self._deletion_queue.deinit(self.allocator); // deinits all the items in the queue
+
         if (vulkan_debug) self._instance.fns.destroyDebugUtilsMessengerEXT(self._instance.instance, self._debug_messenger.?, null);
-        self._instance.fns.destroyInstance(self._instance.instance, null);
     }
 
-    fn createInstance(gpa: std.mem.Allocator, base_fns: vk.BaseWrapper, comptime app_name: [:0]const u8) !Instance {
+    fn createInstance(self: *@This(), base_fns: vk.BaseWrapper, comptime app_name: [:0]const u8) !Instance {
         const app_info = vk.ApplicationInfo{
             .api_version = api_version.toU32(),
             .engine_version = 1,
@@ -126,8 +137,8 @@ pub const Renderer = struct {
 
         var layer_count: u32 = 0;
         _ = try base_fns.enumerateInstanceLayerProperties(&layer_count, null);
-        var layer_props = try std.ArrayList(vk.LayerProperties).initCapacity(gpa, layer_count);
-        defer layer_props.deinit(gpa);
+        var layer_props = try std.ArrayList(vk.LayerProperties).initCapacity(self.allocator, layer_count);
+        defer layer_props.deinit(self.allocator);
         layer_props.items.len = layer_count;
         _ = try base_fns.enumerateInstanceLayerProperties(&layer_count, layer_props.items.ptr);
 
@@ -143,17 +154,17 @@ pub const Renderer = struct {
             return RendererError.SdlGetInstanceExtensionsFailed;
         };
 
-        var required_extensions = try cArrayToArrayList(gpa, [*c]const u8, [*:0]const u8, sdl_extensions, sdl_ext_count);
-        defer required_extensions.deinit(gpa);
+        var required_extensions = try cArrayToArrayList(self.allocator, [*c]const u8, [*:0]const u8, sdl_extensions, sdl_ext_count);
+        defer required_extensions.deinit(self.allocator);
 
         if (vulkan_debug) {
-            try required_extensions.append(gpa, vk.extensions.ext_debug_utils.name);
+            try required_extensions.append(self.allocator, vk.extensions.ext_debug_utils.name);
         }
 
         var ext_count: u32 = 0;
         _ = try base_fns.enumerateInstanceExtensionProperties(null, &ext_count, null);
-        var ext_props = try std.ArrayList(vk.ExtensionProperties).initCapacity(gpa, ext_count);
-        defer ext_props.deinit(gpa);
+        var ext_props = try std.ArrayList(vk.ExtensionProperties).initCapacity(self.allocator, ext_count);
+        defer ext_props.deinit(self.allocator);
         ext_props.items.len = ext_count;
         _ = try base_fns.enumerateInstanceExtensionProperties(null, &ext_count, ext_props.items.ptr);
 
@@ -171,14 +182,18 @@ pub const Renderer = struct {
             .pp_enabled_extension_names = required_extensions.items.ptr,
         };
 
-        const instance = try base_fns.createInstance(&instance_info, null);
+        const vk_instance = try base_fns.createInstance(&instance_info, null);
 
-        return .{
-            .instance = instance,
+        var instance = Instance{
+            .instance = vk_instance,
             .fns = vk.InstanceWrapper.load(instance, base_fns.dispatch.vkGetInstanceProcAddr orelse {
                 return RendererError.FailedToGetInstanceProcAddr;
             }),
         };
+
+        self._deletion_queue.pushBack(self.allocator, &instance.deinit);
+
+        return instance;
     }
 
     fn debugCallback(severity: vk.DebugUtilsMessageSeverityFlagsEXT, msg_type: vk.DebugUtilsMessageTypeFlagsEXT, callback_data: ?*const vk.DebugUtilsMessengerCallbackDataEXT, _: ?*anyopaque) callconv(vk.vulkan_call_conv) vk.Bool32 {
@@ -193,13 +208,13 @@ pub const Renderer = struct {
         return vk.Bool32.false;
     }
 
-    fn createDebugMessenger(instance: *const Instance) !vk.DebugUtilsMessengerEXT {
+    fn createDebugMessenger(self: *@This(), instance: *const Instance) !vk.DebugUtilsMessengerEXT {
         const debug_messenger_info = vk.DebugUtilsMessengerCreateInfoEXT{
             .message_severity = .{ .warning_bit_ext = true, .error_bit_ext = true },
             .message_type = .{ .general_bit_ext = true, .performance_bit_ext = true, .validation_bit_ext = true },
             .pfn_user_callback = &debugCallback,
         };
 
-        return try instance.fns.createDebugUtilsMessengerEXT(instance.instance, &debug_messenger_info, null);
+        return try instance.fns.createDebugUtilsMessengerEXT(instance.vk_instance, &debug_messenger_info, null);
     }
 };
