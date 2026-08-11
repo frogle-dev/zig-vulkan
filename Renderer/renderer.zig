@@ -73,7 +73,7 @@ pub const Renderer = struct {
     _window: *win.Window,
 
     _instance: Instance,
-    _debug_messenger: vk.DebugUtilsMessengerEXT,
+    _debug_messenger: ?vk.DebugUtilsMessengerEXT,
 
     pub fn init(gpa: std.mem.Allocator, window: *win.Window, comptime app_name: [:0]const u8) !@This() {
         if (!c.SDL_Vulkan_LoadLibrary(null)) { // sdl will find vulkan library, if not sdl get vk instance proc addr wil fail
@@ -90,16 +90,16 @@ pub const Renderer = struct {
         const base_fns = vk.BaseWrapper.load(pfn);
 
         const instance = try createInstance(gpa, base_fns, app_name);
-        const debug_messenger = try createDebugMessenger(&instance);
 
         return .{
             ._window = window,
             ._instance = instance,
-            ._debug_messenger = debug_messenger,
+            ._debug_messenger = if (vulkan_debug) try createDebugMessenger(&instance),
         };
     }
 
     pub fn deinit(self: *@This()) void {
+        if (vulkan_debug) self._instance.fns.destroyDebugUtilsMessengerEXT(self._instance.instance, self._debug_messenger.?, null);
         self._instance.fns.destroyInstance(self._instance.instance, null);
     }
 
@@ -194,15 +194,12 @@ pub const Renderer = struct {
     }
 
     fn createDebugMessenger(instance: *const Instance) !vk.DebugUtilsMessengerEXT {
-        if (!vulkan_debug)
-            return;
-
         const debug_messenger_info = vk.DebugUtilsMessengerCreateInfoEXT{
             .message_severity = .{ .warning_bit_ext = true, .error_bit_ext = true },
             .message_type = .{ .general_bit_ext = true, .performance_bit_ext = true, .validation_bit_ext = true },
             .pfn_user_callback = &debugCallback,
         };
 
-        return instance.fns.createDebugUtilsMessengerEXT(instance.instance, &debug_messenger_info, null);
+        return try instance.fns.createDebugUtilsMessengerEXT(instance.instance, &debug_messenger_info, null);
     }
 };
