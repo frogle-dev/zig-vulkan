@@ -82,8 +82,11 @@ const Instance = struct {
     fns: vk.InstanceWrapper,
 
     pub fn deinit(self: *@This()) void {
-        if (vulkan_debug) self.fns.destroyDebugUtilsMessengerEXT(self.vk_instance, self.vk_debug_messenger.?, null);
         self.fns.destroyInstance(self.vk_instance, null);
+    }
+
+    pub fn deinitDebugMessenger(self: *@This()) void {
+        if (vulkan_debug) self.fns.destroyDebugUtilsMessengerEXT(self.vk_instance, self.vk_debug_messenger.?, null);
     }
 };
 
@@ -115,7 +118,7 @@ pub const Renderer = struct {
         const base_fns = vk.BaseWrapper.load(pfn);
 
         try self.createInstance(base_fns, app_name);
-        if (vulkan_debug) self._instance.vk_debug_messenger = try self.createDebugMessenger(&self._instance);
+        if (vulkan_debug) try self.createDebugMessenger();
     }
 
     pub fn deinit(self: *@This()) void {
@@ -203,13 +206,15 @@ pub const Renderer = struct {
         return vk.Bool32.false;
     }
 
-    fn createDebugMessenger(_: *@This(), instance: *const Instance) !vk.DebugUtilsMessengerEXT {
+    fn createDebugMessenger(self: *@This()) !void {
         const debug_messenger_info = vk.DebugUtilsMessengerCreateInfoEXT{
             .message_severity = .{ .warning_bit_ext = true, .error_bit_ext = true },
             .message_type = .{ .general_bit_ext = true, .performance_bit_ext = true, .validation_bit_ext = true },
             .pfn_user_callback = &debugCallback,
         };
 
-        return try instance.fns.createDebugUtilsMessengerEXT(instance.vk_instance, &debug_messenger_info, null);
+        self._instance.vk_debug_messenger = try self._instance.fns.createDebugUtilsMessengerEXT(self._instance.vk_instance, &debug_messenger_info, null);
+
+        try self._deletion_queue.push(self.allocator, Instance, &self._instance, &Instance.deinitDebugMessenger);
     }
 };

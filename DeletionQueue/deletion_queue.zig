@@ -24,8 +24,8 @@ pub const DeletionQueue = struct {
 
     /// will deinit all the elements in the queue
     pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
-        for (0..self._queue.len) |i| {
-            var entry = self._queue.buffer[i];
+        var it = self._queue.iterator();
+        while (it.next()) |entry| {
             entry.deinitFn(entry.ctx);
         }
 
